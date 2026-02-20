@@ -1,4 +1,4 @@
-# WHOOP Widget for macOS
+# WHOOP heart rate widget for macOS menu bar
 
 A macOS app that displays your **real-time** heart rate from your WHOOP device via Bluetooth.
 
