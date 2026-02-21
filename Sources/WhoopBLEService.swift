@@ -156,6 +156,8 @@ extension WhoopBLEService: CBPeripheralDelegate {
     }
 
     private func parseHeartRate(from data: Data) -> Int {
+        guard data.count >= 2 else { return 0 }
+
         var heartRate: UInt16 = 0
         let flags = data[0]
 
@@ -165,6 +167,7 @@ extension WhoopBLEService: CBPeripheralDelegate {
             heartRate = UInt16(data[1])
         } else {
             // Heart rate is UINT16
+            guard data.count >= 3 else { return Int(UInt16(data[1])) }
             heartRate = UInt16(data[1]) | (UInt16(data[2]) << 8)
         }
 

@@ -1,29 +1,20 @@
 import SwiftUI
 import Foundation
 import AppKit
-
-@main
-struct WhoopWidgetApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        WindowGroup {
-            MainWindowView(bleService: appDelegate.bleService ?? WhoopBLEService())
-                .frame(width: 300, height: 200)
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
-    }
-}
+import ServiceManagement
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
-    var bleService: WhoopBLEService?
+    let bleService: WhoopBLEService
+    private var updateTimer: Timer?
+
+    override init() {
+        bleService = WhoopBLEService()
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        bleService = WhoopBLEService()
-
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
@@ -32,14 +23,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         popover = NSPopover()
-        popover?.contentSize = NSSize(width: 350, height: 220)
+        popover?.contentSize = NSSize(width: 350, height: 270)
         popover?.behavior = .transient
-        popover?.contentViewController = NSHostingController(rootView: HeartRateGraphView(bleService: bleService!))
+        popover?.contentViewController = NSHostingController(rootView: HeartRateGraphView(bleService: bleService))
 
-        // Update menu bar when heart rate changes
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateMenuBar()
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        updateTimer?.invalidate()
+        updateTimer = nil
+        bleService.disconnect()
     }
 
     @objc func togglePopover() {
@@ -55,9 +51,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func updateMenuBar() {
         guard let button = statusItem?.button else { return }
 
-        if let hr = bleService?.currentHeartRate {
+        if let hr = bleService.currentHeartRate {
             button.title = "♥ \(hr)"
-        } else if bleService?.isConnected == true {
+        } else if bleService.isConnected {
             button.title = "♥ --"
         } else {
             button.title = "♥ ···"
@@ -65,49 +61,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-struct MainWindowView: View {
-    @ObservedObject var bleService: WhoopBLEService
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("WHOOP Heart Rate")
-                .font(.title2)
-                .bold()
-
-            if bleService.isConnected {
-                if let hr = bleService.currentHeartRate {
-                    Text("\(hr)")
-                        .font(.system(size: 64, weight: .bold, design: .rounded))
-                        .foregroundColor(.red)
-                    Text("BPM")
-                        .font(.title3)
-                        .foregroundColor(.gray)
-                } else {
-                    ProgressView()
-                        .scaleEffect(1.2)
-                        .padding()
-                    Text("Waiting for data...")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-            } else {
-                ProgressView()
-                    .scaleEffect(1.2)
-                    .padding()
-                Text(bleService.statusMessage)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
-    }
-}
-
 struct HeartRateGraphView: View {
     @ObservedObject var bleService: WhoopBLEService
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
         VStack(spacing: 8) {
@@ -152,9 +108,38 @@ struct HeartRateGraphView: View {
                 }
                 .frame(height: 150)
             }
+
+            Divider()
+
+            HStack {
+                Toggle("Start at Login", isOn: $launchAtLogin)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .onChange(of: launchAtLogin) { newValue in
+                        do {
+                            if newValue {
+                                try SMAppService.mainApp.register()
+                            } else {
+                                try SMAppService.mainApp.unregister()
+                            }
+                        } catch {
+                            launchAtLogin = !newValue
+                        }
+                    }
+
+                Spacer()
+
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                .font(.caption)
+            }
+            .padding(.horizontal, 12)
         }
         .padding(.vertical, 12)
-        .frame(width: 350, height: 220)
+        .frame(width: 350, height: 270)
     }
 }
 
@@ -256,4 +241,3 @@ struct HeartRateChart: View {
         }
     }
 }
-
